@@ -1,4 +1,4 @@
-# future-robotics
+![FR Banner](http://wiki.thefuturerobots.com/lib/exe/fetch.php?cache=&media=fr-horizontal.png)
 ## A collection of projects created by the Future Robots burning man camp 
 
 
