@@ -17,6 +17,10 @@ We could benefit from longer dust-proof cabling so that the brain could be furth
 
 Our use of both 16-led and 12-led rings made it so the middle ring was always partially obscured by the upper (smallest) ring. We might want to consider designing our own custom IC for the talisman LEDs so that we can control our LED placement better and also better line up the leds to our translucent printed map. 
 
+## GPS Module
+
+I used the U-Blox neo6mv2 gps module, on a board with a built-in ceramic antenna usb-to-serial chip. The supplied software for setting firmware (u-center) is awful and, for some reason, my firmware settings would disappear after a few days and go back to the default. In the future, we should probably write an initialization routine in our arduino sketch that checks the firmware settings, and if not set correctly, resets them to our custom settings. To do this, we can either study the datasheet or we can snag the serial data coming from u-center and put it directly in the arduino code. I couldn't find any pre-made arduino packages for setting u-blox firmware, but it might be worth another googling. One note though is that if we wish to go the route of setting configuration in code, we will need to connect the recv line on the gps module, which will cost us another I/O pin.
+
 ## software
 
 #### party mode
