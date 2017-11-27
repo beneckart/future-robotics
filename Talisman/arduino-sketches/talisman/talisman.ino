@@ -65,7 +65,7 @@
 
 #define NUM_TALISMAN 12
 
-enum BUTTON_STATE { MODE_PARTY, MODE_MAP, MODE_DIAGNOSTIC, MODE_TRACKER_ONLY };
+enum BUTTON_STATE { MODE_PARTY, MODE_MAP, MODE_DIAGNOSTIC, MODE_TRACKER_ONLY, MODE_ZOOM_1, MODE_ZOOM_2, MODE_ZOOM_3 };
 
 #define GPS_SERIAL_BUFFER_LEN 256 //bytes
 
@@ -154,6 +154,10 @@ File logfile;
 #define SCALE 15.
 #endif
 
+#define ZOOM_1_SCALE 1
+#define ZOOM_2_SCALE 2
+#define ZOOM_3_SCALE 3
+
 ///// PLAYA COORDINATES CODE /////
 
 #define DEG_PER_RAD (180. / 3.1415926535)
@@ -171,6 +175,9 @@ File logfile;
 #define RADIAL_GAP 2.  // hours
 // How far radially from edge of city to show distance relative to city streets
 #define RADIAL_BUFFER .25  // hours
+
+// Radius of Earth in meters
+#define EARTH_RADIUS 6371000
 
 /*
  * Main talisman objects (gps and leds)
@@ -237,6 +244,8 @@ uint8_t numSatOthers[NUM_TALISMAN];
 uint8_t hourOthers[NUM_TALISMAN]; 
 uint8_t minuteOthers[NUM_TALISMAN]; 
 uint16_t distOthers[NUM_TALISMAN];
+double latOthers[NUM_TALISMAN];
+double lonOthers[NUM_TALISMAN];
 uint8_t prevPixelId[NUM_TALISMAN];
 uint8_t pixelId[NUM_TALISMAN];
 unsigned long updateTimes[NUM_TALISMAN];
@@ -603,6 +612,46 @@ void loop() {
   {
     leds.Update(); 
   }
+  else if (button_state == MODE_ZOOM_1 && currTime - last_led >= LED_MAP_UPDATE_DELAY_MS)
+  {
+    // ZOOM_1 each ring is X meters for a total of 3*X meters max distance
+    //set yourself at center, there is no center pixel apparently, soooooo we turn you off
+    //leds.setPixelColor(currPixelId[DEVICE_ID], 0);
+
+    //find position of man relative to you (reverse the normal MAP_MODE coordinates)
+
+    //for each other find position relative to you
+
+    /*uint8_t currDevId = device_ctr%NUM_TALISMAN;
+    uint8_t currPixelId = pixelId[currDevId];
+    if(currPixelId < NUM_NEOPIXELS && currTime - updateTimes[currDevId] > STALE_MAP_POINT_SEC*1000)
+    {
+      // point is stale, so remove it
+      leds.setPixelColor(currPixelId, 0);
+      pixelId[currDevId] = NUM_NEOPIXELS+1;
+      prevPixelId[currDevId] = NUM_NEOPIXELS+1;;
+    }  
+    uint8_t prevPixelId_tmp = prevPixelId[currDevId];
+    if(prevPixelId_tmp < NUM_NEOPIXELS)
+      leds.setPixelColor(prevPixelId_tmp, 0);
+    if(currPixelId < NUM_NEOPIXELS)
+      leds.setPixelColor(currPixelId, colorMap[currDevId]);
+    prevPixelId[currDevId] = currPixelId;
+
+    
+    leds.show();  
+    device_ctr++;
+    last_led = millis();*/
+
+  }
+  else if (button_state == MODE_ZOOM_2 && currTime - last_led >= LED_MAP_UPDATE_DELAY_MS)
+  {
+
+  }
+  else if (button_state == MODE_ZOOM_3 && currTime - last_led >= LED_MAP_UPDATE_DELAY_MS)
+  {
+
+  }
 
   button.poll();
 
@@ -626,10 +675,28 @@ void loop() {
           leds.show(); 
           break;
       case MODE_MAP:
-          button_state = MODE_DIAGNOSTIC;
+          button_state = MODE_ZOOM_1;
           leds.ActivePattern = NONE;
           leds.clear();
           leds.show(); 
+          break;
+      case MODE_ZOOM_1:
+          button_state = MODE_ZOOM_2;
+          leds.ActivePattern = NONE;
+          leds.clear();
+          leds.show();
+          break;
+      case MODE_ZOOM_2:
+          button_state = MODE_ZOOM_3;
+          leds.ActivePattern = NONE;
+          leds.clear();
+          leds.show();
+          break;
+      case MODE_ZOOM_3:
+          button_state = MODE_DIAGNOSTIC;
+          leds.ActivePattern = NONE;
+          leds.clear();
+          leds.show();
           break;
       case MODE_DIAGNOSTIC:
           button_state = MODE_TRACKER_ONLY;
@@ -864,6 +931,7 @@ uint8_t sendPkt(double lat, double lon, uint8_t batPerc, uint8_t numSat)
     float dlat = (float)lat - MAN_LAT;
     float dlon = (float)lon - MAN_LON;
   
+    //why do we only use cos and not sin as well? Strange.
     float m_dx = dlon * METERS_PER_DEGREE * cos(MAN_LAT / DEG_PER_RAD);
     float m_dy = dlat * METERS_PER_DEGREE;
   
@@ -872,7 +940,7 @@ uint8_t sendPkt(double lat, double lon, uint8_t batPerc, uint8_t numSat)
   
     float clock_hours = (bearing / 360. * 12. + NORTH);
     uint16_t clock_minutes = (uint16_t)(clock_hours * 60 + .5);
-    // Force into the range [0, CLOCK_MINUTES)
+    // Force into the range [0, CLOCK_MINUTES), also why + and % again?
     clock_minutes = ((clock_minutes % CLOCK_MINUTES) + CLOCK_MINUTES) % CLOCK_MINUTES;
   
     uint8_t hour = clock_minutes / 60;
@@ -891,6 +959,8 @@ uint8_t sendPkt(double lat, double lon, uint8_t batPerc, uint8_t numSat)
     Serial.write((byte)hour);
     Serial.write((byte)minute);
     Serial.write((byte *) &distRounded, 2);
+    //I need this information since having the hour and minute relative to the man is probably too low
+    //res to be useful for the zoom mode
     //Serial.write((byte *) &lat, sizeof(lat)); // 8 bytes in a double
     //Serial.write((byte *) &lon, sizeof(lon)); // 8 bytes in a double
     Serial.write((byte)0xBE); //BEEF is 2-byte end of message
@@ -931,5 +1001,36 @@ uint8_t get_pixel_id(uint8_t hr, uint8_t minute, uint16_t dist)
   {
     return (((((int)hr%12)*60 + minute+15)/30)+1)%24; // outer ring (0-23)
   }
+}
+
+uint8_t get_scaled_pixel_id(double olat, double olon, uint16_t scale)
+{
+  float dlat = olat - (float) lat;
+  float dlon = olon - (float) lon;
+
+  float mdx  = dlon * METERS_PER_DEGREE * cos((float)lat/DEG_PER_RAD);
+  float mdy = dlat * METERS_PER_DEGREE;
+
+  float dist = sqrt(mdx*mdx + mdy*mdy);
+  float bearing = DEG_PER_RAD * atan2(mdx, mdy);
+}
+
+double haversine_dist(double lat1, double lon1, double lat2, double lon2)
+{
+  double dx, dy, dz;
+  lon1 -= lon2;
+  lon1 /= DEG_PER_RAD, lat1 /= DEG_PER_RAD, lat2 /= DEG_PER_RAD;
+
+  dz = sin(lat1) - sin(lat2);
+  dx = cos(lon1) * cos(lat1) - cos(lat2);
+  dy = sin(lon1) * cos(lat1);
+
+  return asin(sqrt(dx * dx + dy * dy + dz * dz) / 2) * 2 * EARTH_RADIUS;
+
+}
+
+double haversine_bearing(double lat1, double lon1, double lat2, double lon2) 
+{
+
 }
 
