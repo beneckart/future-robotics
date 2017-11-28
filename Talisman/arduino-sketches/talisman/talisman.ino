@@ -148,9 +148,9 @@ File logfile;
 #define PLAYA_ELEV 1190.  // m
 #define SCALE 1.
 #else
-#define MAN_LAT 40.42425
-#define MAN_LON -79.982274
-#define PLAYA_ELEV 272.  // m
+#define MAN_LAT 37.819900 // golden gate bridge
+#define MAN_LON -122.478300
+#define PLAYA_ELEV 67.  // m
 #define SCALE 15.
 #endif
 
@@ -1017,20 +1017,27 @@ uint8_t get_scaled_pixel_id(double olat, double olon, uint16_t scale)
 
 double haversine_dist(double lat1, double lon1, double lat2, double lon2)
 {
-  double dx, dy, dz;
-  lon1 -= lon2;
-  lon1 /= DEG_PER_RAD, lat1 /= DEG_PER_RAD, lat2 /= DEG_PER_RAD;
+  double phi1 = lat1 / DEG_PER_RAD;
+  double phi2 = lat2 / DEG_PER_RAD;
+  double deltaPhi = (lat2 - lat1) / DEG_PER_RAD;
+  double deltaLambda = (lon2 - lon1) / DEG_PER_RAD;
 
-  dz = sin(lat1) - sin(lat2);
-  dx = cos(lon1) * cos(lat1) - cos(lat2);
-  dy = sin(lon1) * cos(lat1);
+  double a = sin(deltaPhi/2) * sin(deltaPhi) + cos(phi1) * cos(phi2) * sin(deltaLambda/2) * sin(deltaLambda/2);
+  double c = 2 * atan2(sqrt(a), sqrt(1-a));
 
-  return asin(sqrt(dx * dx + dy * dy + dz * dz) / 2) * 2 * EARTH_RADIUS;
-
+  return EARTH_RADIUS * c;
 }
 
 double haversine_bearing(double lat1, double lon1, double lat2, double lon2) 
 {
+  double phi1 = lat1 / DEG_PER_RAD;
+  double phi2 = lat2 / DEG_PER_RAD;
+  double deltaPhi = (lat2 - lat1) / DEG_PER_RAD;
+  double deltaLambda = (lon2 - lon1) / DEG_PER_RAD;
 
+  double y = sin(deltaLambda) * cos(phi2);
+  double x = cos(phi1) * sin(phi2) - sin(phi1) * cos(phi2) * cos(deltaLambda);
+
+  return ((atan2(y, x) * DEG_PER_RAD) + 360) % 360
 }
 
