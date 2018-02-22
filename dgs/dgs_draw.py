@@ -82,12 +82,12 @@ def main():
 				people_who_need_to_be_paired.remove(couples[person])
 
 			else:
-				# your partner was already paired, so pair you randomly
+				# your partner was already paired or got an extra, so pair you randomly
 				partner = people_who_need_to_be_paired.pop()
 				pairs.append((person, partner))
 
 		else:
-			# you aren't in a couple
+			# you aren't in a couple, pair randomly
 			partner = people_who_need_to_be_paired.pop()
 			pairs.append((person, partner))
 
