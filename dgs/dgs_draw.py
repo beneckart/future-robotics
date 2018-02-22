@@ -1,3 +1,4 @@
+# run with python 2.7
 import random
 import time
 
@@ -51,9 +52,9 @@ def main():
 	# which was set finalized in call and was filled in according to when people saw/had time to fill in
 	# it is a constant source of pre-commitment, plus google maintains revision history so if people thing it was
 	# reordered for advantage we can prove whether it was or not, I genuinely don't know what the outcome will be 
-	#random.seed(''.join(people)
+	random.seed(''.join(people)
 	##time only for testing
-	random.seed(str(time.time()*1000))
+	##random.seed(str(time.time()*1000))
 
 	people_for_draw = set(people) - set(people_who_want_one)
 
