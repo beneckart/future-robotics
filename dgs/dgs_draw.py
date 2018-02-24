@@ -1,3 +1,4 @@
+# run with python 2.7
 import random
 import time
 
@@ -51,7 +52,7 @@ def main():
 	# which was set finalized in call and was filled in according to when people saw/had time to fill in
 	# it is a constant source of pre-commitment, plus google maintains revision history so if people thing it was
 	# reordered for advantage we can prove whether it was or not, I genuinely don't know what the outcome will be 
-	random.seed(''.join(people)
+	random.seed(''.join(people))
 	##time only for testing
 	##random.seed(str(time.time()*1000))
 
@@ -69,15 +70,7 @@ def main():
 
 	pairs = []
 
-	# 1. Figure out which couples can just be paired together because only one got an extra
-	for person in people_who_get_an_extra:
-		if person in couples:
-			if couples[person] not in people_who_get_an_extra:
-				pairs.append((person, couples[person]))
-				people_who_need_to_be_paired.remove(couples[person])
-				people_who_get_an_extra.remove(person)
-
-	# 2. Pair everyone who didn't get an extra
+	# Pair everyone who didn't get an extra
 
 	while len(people_who_need_to_be_paired) > 1:
 		person = people_who_need_to_be_paired.pop()
@@ -89,14 +82,12 @@ def main():
 				people_who_need_to_be_paired.remove(couples[person])
 
 			else:
-				# your partner was already paired, so pair you randomly
-				# this shouldn't happen
-				print "This shouldn't happen"
+				# your partner was already paired or got an extra, so pair you randomly
 				partner = people_who_need_to_be_paired.pop()
 				pairs.append((person, partner))
 
 		else:
-			# you aren't in a couple
+			# you aren't in a couple, pair randomly
 			partner = people_who_need_to_be_paired.pop()
 			pairs.append((person, partner))
 
@@ -105,6 +96,10 @@ def main():
 	print ''
 	print '####### Pairs #########'
 	print pairs
+
+	print ''
+	print '####### Left Behind #########'
+	print people_who_need_to_be_paired
 
 
 if __name__ == "__main__":
