@@ -241,7 +241,8 @@ public class OPC
       ledAddress += 3;
 
       if (enableShowLocations) {
-        pixels[pixelLocation] = 0xFFFFFF ^ pixel;
+        //pixels[pixelLocation] = 0xFFFFFF ^ pixel;
+        pixels[pixelLocation] = 0x8F0000 ^ pixel;
       }
     }
 

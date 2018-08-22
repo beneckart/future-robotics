@@ -6,7 +6,9 @@ PImage dot;
 
 int NUM_TALISMAN = 12;
 float DOT_SIZE = 0.05; // as a percentage of the map
-float PULSE_PERCENT = 20.0;
+float PULSE_PERCENT = 100.0;
+
+boolean SHOW_LOCATIONS = false;
 
 int LORA_PKT_SIZE = 11;
 
@@ -37,11 +39,15 @@ float SCALE = 1.0;
 float MINLAT = 0;
 float MINLON = 0;
 
+boolean REVERSE = true;
 
 int[] deviceLocX = new int[NUM_TALISMAN];
 int[] deviceLocY = new int[NUM_TALISMAN];
 
-final int RESOLUTION = 500;
+float[] LATARR = new float[500];
+float[] LONARR = new float[500];
+
+final int RESOLUTION = 64;
 
 /*color[] colorMap ={color(255,0,0), //red
                    color(0,128,0), //green
@@ -72,11 +78,11 @@ color[] colorMap = {color(31,120,180), //deep blue
 
 void setup()
 {
-  size(500, 500);
+  size(64, 64);
   frameRate(30);
   
   printArray(Serial.list()); 
-  myPort = new Serial(this, "/dev/ttyUSB0", 9600); 
+  //myPort = new Serial(this, "/dev/ttyUSB0", 9600);
   
   // set up serial port to listen
   // buiuld circular buffer (just like arduino)
@@ -85,21 +91,22 @@ void setup()
   
   for(int i = 0; i < NUM_TALISMAN; i++)
   {
-    deviceLocX[i] = (int)random(500);
-    deviceLocY[i] = (int)random(500);
+    deviceLocX[i] = (int)random(RESOLUTION-1);
+    deviceLocY[i] = (int)random(RESOLUTION-1);
   }
   
   // Connect to the local instance of fcserver
   opc = new OPC(this, "127.0.0.1", 7890);
   
-  opc.showLocations(true);
+  opc.showLocations(SHOW_LOCATIONS);
   
   opc.setColorCorrection(2.5, 1.0, 1.0, 1.0);
 
   dot = loadImage("dot3.png");
   
-  String[] lines = loadStrings("MM_latlon");
   
+
+  String[] lines = loadStrings("MM_latlon");
   float[] latArr = new float[lines.length];
   float[] lonArr = new float[lines.length];
   int[] idArr = new int[lines.length];
@@ -114,14 +121,16 @@ void setup()
      latArr[i] = latlon[0];
      lonArr[i] = latlon[1];
      idArr[i] = id;
+     LATARR[i] = latArr[i];
+     LONARR[i] = lonArr[i];
   }
-
+  
   // now we have the (rotated) lat lon with temple at due north
   // let's find the bounds of the map and remap them to pixel coords  
-  float minLat = min(latArr);
-  float maxLat = max(latArr);
-  float minLon = min(lonArr);
-  float maxLon = max(lonArr);
+  float minLat = min(latArr)-100;
+  float maxLat = max(latArr)+100;
+  float minLon = min(lonArr)-100;
+  float maxLon = max(lonArr)+100;
   
   float widthLat = maxLat - minLat;
   float widthLon = maxLon - minLon;
@@ -139,11 +148,21 @@ void setup()
   
   //println("!" + scale + " " + MINLAT + " " + MINLON);
   
-  for(int i = 0; i < latArr.length; i++)
+  boolean MM = false;
+  if(MM)
+  {    
+    for(int i = 0; i < latArr.length; i++)
+    {
+      int[] pixel_coord = to_pixel_coord(latArr[i], lonArr[i], scale, minLat, minLon, REVERSE);
+      //println(idArr[i] + ": " + pixel_coord[0] + " " + pixel_coord[1]);
+      opc.led(idArr[i], pixel_coord[0], pixel_coord[1]);  
+    }
+  }  
+  else
   {
-    int[] pixel_coord = to_pixel_coord(latArr[i], lonArr[i], scale, minLat, minLon, true);
-    //println(idArr[i] + ": " + pixel_coord[0] + " " + pixel_coord[1]);
-    opc.led(idArr[i], pixel_coord[0], pixel_coord[1]);  
+     opc.ledGrid(0, 64, 64, RESOLUTION/2-.5, RESOLUTION/2-.5,
+                 1, 1, 0, false);//,
+                 //false); 
   }
 }
 
@@ -212,7 +231,7 @@ float rotateY(float x, float y, float theta)
     return yr;
 }
 
-void serialEvent(Serial p) 
+/*void serialEvent(Serial p) 
 { 
     int readIt =  (int)myPort.read();
     if(readIt != -1)
@@ -250,13 +269,44 @@ void serialEvent(Serial p)
         }
         pos++;
     }
+}*/
+
+void fakeFrame()
+{
+      int devId = (int)0;
+      batPercOthers[devId] = 99;
+      numSatOthers[devId] = 11;
+      hourOthers[devId] = 12;
+      minuteOthers[devId] = 30;
+      distOthers[devId] = 1000;
+
+      //println(str(hourOthers[devId]) + " " + str(minuteOthers[devId]) + " " + str(distOthers[devId]));
+
+      last_recv = 0;//millis();
+
+      updateTimes[devId] = last_recv; 
 }
+
 
 int frameIdx = 0;
 
 void draw()
 {
-    background(0);
+  background(0);
+  //if(frameIdx == 0)
+  //{
+    
+    
+    tint(colorMap[1]);
+    for(int i = 0; i < LATARR.length; i++)
+    {
+      int[] pixel_coord = to_pixel_coord(LATARR[i], LONARR[i], SCALE, MINLAT, MINLON, REVERSE);
+      //println(idArr[i] + ": " + pixel_coord[0] + " " + pixel_coord[1]);
+      //opc.led(idArr[i], pixel_coord[0], pixel_coord[1]);  
+      float dotSize = height * DOT_SIZE*.5;
+      image(dot, pixel_coord[0] - dotSize/2, pixel_coord[1] - dotSize/2, dotSize, dotSize);
+    }
+  //}
   
     //int i = (frameIdx/15)%NUM_TALISMAN;
     for(int i = 0; i < NUM_TALISMAN; i++)
@@ -267,7 +317,7 @@ void draw()
         int hr;
         int minute;
         int dist;
-
+       
         hr = hourOthers[i];
         minute = minuteOthers[i];
         dist = distOthers[i];
@@ -277,20 +327,23 @@ void draw()
       
         float[] latlon = playa_to_latlon(hr, minute, dist);
         float[] latlon_m = latlon_to_meters(latlon[0], latlon[1]);
-        int[] pixelCoords = to_pixel_coord(latlon_m[0], latlon_m[1], SCALE, MINLAT, MINLON,false);    
+        int[] pixelCoords = to_pixel_coord(latlon_m[0], latlon_m[1], SCALE, MINLAT, MINLON, REVERSE);    
     
         if(pixelCoords[0] != -1)
         {
             //color rgb = color(255,random(25),random(25));
             tint(colorMap[i]);//, 100);
             //blendMode(ADD);
-            blendMode(8);
+            //blendMode(8);
             image(dot, pixelCoords[0] - dotSize/2, pixelCoords[1] - dotSize/2, dotSize, dotSize);
         }
     }
-    
+ 
+    if(frameIdx == 0)
+      fakeFrame();
+  
     // REDRAW "ACTIVE" overlaid dot
-    int i = (frameIdx)%NUM_TALISMAN;
+    /*int i = (frameIdx)%NUM_TALISMAN;
     // Change the dot size as a function of time, to make it "throb"
     float dotSize = height * DOT_SIZE * (1.0 + PULSE_PERCENT/100.0 * sin(millis() * 0.01));
 
@@ -304,7 +357,7 @@ void draw()
 
     float[] latlon = playa_to_latlon(hr, minute, dist);
     float[] latlon_m = latlon_to_meters(latlon[0], latlon[1]);
-    int[] pixelCoords = to_pixel_coord(latlon_m[0], latlon_m[1], SCALE, MINLAT, MINLON, false);    
+    int[] pixelCoords = to_pixel_coord(latlon_m[0], latlon_m[1], SCALE, MINLAT, MINLON, REVERSE);    
 
     if(pixelCoords[0] != -1 && dist != 0)
     {
@@ -312,6 +365,6 @@ void draw()
         tint(colorMap[i]);//, 100);
         blendMode(1);
         image(dot, pixelCoords[0] - dotSize/2, pixelCoords[1] - dotSize/2, dotSize, dotSize);
-    }
+    }*/
     frameIdx++;
 }
