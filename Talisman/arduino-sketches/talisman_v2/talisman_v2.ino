@@ -2,12 +2,12 @@
 #include <SPI.h>
 #include <LoRa.h>
 #include <Wire.h>  
-//#include <NeoPixelBus.h>
-#include <NeoPixelBrightnessBus.h>
+#include "TalismanPatterns.cpp"
 #include <TinyGPS++.h>
-//#include <FS.h>
-//#include <SPIFFS.h>
+#include "FS.h"
+#include "SPIFFS.h"
 #include "Switch.h"
+#include "SSD1306.h" 
 
 #define VERSION 2.1
 
@@ -23,21 +23,21 @@
 // delays
 #define LED_MAP_UPDATE_DELAY_MS 250
 
-#define BATTERY_CHECK_DELAY_MS 10000
+#define BATTERY_CHECK_DELAY_MS 60*1000*5
 
 #define DIAGNOSTIC_UPDATE_DELAY_MS 500
 
 #define STALE_MAP_POINT_SEC 300 // 300 = 5 minutes until point drops from map
 
 // low battery percentage
-#define LOW_BATTERY 0
+#define LOW_BATTERY -1
 
 // led brightness
-#define LED_BRIGHTNESS 12 // 0-255 (12=%5)
+#define LED_BRIGHTNESS 4 // 0-255 (12=%5)
 #define LED_BRIGHTNESS_FADE 32 // needs to be at least 32 for smoother fades
 
 // how quick we allow the animations to be in party mode
-#define LED_MIN_DELAY_MS 20
+#define LED_MIN_DELAY_MS 15
 
 #define BUTTON_DEBOUNCE 40
 
@@ -48,11 +48,11 @@
  * Main compile/debugging options
  */
 
-//#define LOGGING
+#define LOGGING
 
-#define LOG_UPDATE_DELAY_MS 20000
+#define LOG_UPDATE_DELAY_MS 1000
 
-//#define DEBUG_OLED
+#define DEBUG_OLED
 
 #define OLED_UPDATE_DELAY_MS 2000
 
@@ -60,14 +60,16 @@
  * Program Constants (change at your own risk!)
  */
 
-#define NUM_TALISMAN 10
+#define NUM_TALISMAN 6
+
+#define RECEIVE_ONLY 0
 
 #define NUM_NEOPIXELS 120
 
-enum BUTTON_STATE { MODE_PARTY, MODE_MAP, MODE_DIAGNOSTIC, MODE_TRACKER_ONLY };
+enum BUTTON_STATE { MODE_PARTY, MODE_PARTY2, MODE_MAP, MODE_DIAGNOSTIC, MODE_TRACKER_ONLY };
 
 // min time between transmissions
-#define LORA_SEND_DELAY_MS 100
+#define LORA_SEND_DELAY_MS 500
 
 #define LORA_PKT_SIZE 11
 
@@ -78,10 +80,10 @@ enum BUTTON_STATE { MODE_PARTY, MODE_MAP, MODE_DIAGNOSTIC, MODE_TRACKER_ONLY };
 #define MISO    19   // GPIO19 -- SX1278's MISO
 #define MOSI    27   // GPIO27 -- SX1278's MOSI
 #define SS      18   // GPIO18 -- SX1278's CS
-#define RST     23   // GPIO14 -- SX1278's RESET (!!!!!)
+#define RST     14   // GPIO14 -- SX1278's RESET (!!!!!)
 #define DI0     26   // GPIO26 -- SX1278's IRQ(Interrupt Request)
-#define BAND    915E6 //
-#define SPREADING_FACTOR 11
+#define BAND    868E6 //
+#define SPREADING_FACTOR 9
 
 // 1-20, default in library is 17 db
 // latest github version supports 20db (test this?) but max before that was 17db
@@ -102,26 +104,19 @@ enum BUTTON_STATE { MODE_PARTY, MODE_MAP, MODE_DIAGNOSTIC, MODE_TRACKER_ONLY };
 
 #define BUTTON_PIN 39
 
-// J1 jumper on pwr board must be jumped
-#define BATTERY_PIN 4 
+#define BATTERY_PIN 35 
 
 /*
  * Debugging setup
  */
 
 #ifdef DEBUG_OLED
-#include "Adafruit_SSD1306.h"
-#define OLED_RESET 0  // GPIO0
-Adafruit_SSD1306 display(OLED_RESET);
-#define LOGO16_GLCD_HEIGHT 16
-#define LOGO16_GLCD_WIDTH  16
-#if (SSD1306_LCDHEIGHT != 48)
-#error("Height incorrect, please fix Adafruit_SSD1306.h!");
-#endif
+SSD1306 display(0x3c, 21, 22);
 #endif
 
 #ifdef LOGGING
 File logfile;
+#define FORMAT_SPIFFS_IF_FAILED true
 #endif
 
 /*
@@ -134,10 +129,16 @@ File logfile;
 #define PLAYA_ELEV 1190.  // m
 #define SCALE 1.
 #else
-#define MAN_LAT 40.42425
-#define MAN_LON -79.982274
-#define PLAYA_ELEV 272.  // m
+//#define MAN_LAT 40.42425
+//#define MAN_LON -79.982274
+//#define PLAYA_ELEV 272.  // m
+//#define SCALE 15.
+#define MAN_LAT 37.75687
+#define MAN_LON -122.4149
+#define PLAYA_ELEV -17.
 #define SCALE 15.
+//Time      : 7:0:57 when really 12:03am
+
 #endif
 
 ///// PLAYA COORDINATES CODE /////
@@ -167,8 +168,8 @@ TinyGPSPlus gps;
 
 Switch button = Switch(BUTTON_PIN, INPUT_PULLUP, LOW, 40, 400, 250);
 
-NeoPixelBrightnessBus<NeoGrbFeature, NeoEsp32I2s0800KbpsMethod> leds(NUM_NEOPIXELS, LED_PIN1);
-NeoPixelBrightnessBus<NeoGrbFeature, NeoEsp32I2s1800KbpsMethod> leds2(NUM_NEOPIXELS, LED_PIN2);
+TalismanPatterns<NeoGrbFeature, NeoEsp32I2s0800KbpsMethod> leds(NUM_NEOPIXELS, LED_PIN1, RingComplete);
+TalismanPatterns<NeoGrbFeature, NeoEsp32I2s1800KbpsMethod> leds2(NUM_NEOPIXELS, LED_PIN2, RingComplete);
 
 /*uint32_t colorMap[12] = {RgbColor(255,0,0), //red
                          RgbColor(0,128,0), //green
@@ -232,6 +233,8 @@ uint8_t batPerc = 99; //getBatPercentage();
 
 double lat = 0;
 double lon = 0;
+double prevLat = 0;
+double prevLon = 0;
 uint8_t numSat = 0; // (uint8_t) gps.satellites.value();
 float spd = 0.0;
 uint8_t month;// = gps.date.month();
@@ -242,21 +245,31 @@ uint8_t second = 255;// dummy val to start
 uint8_t centisecond = 255;
 uint32_t millisecond = 1000;
 
+double displacement = 0.0;
+
 bool prev_update_sent = true;
 bool blinkState = true;
 
 void setup() {
  
 #ifdef DEBUG_OLED
-  display.begin(SSD1306_SWITCHCAPVCC, 0x3C);  // initialize with the I2C addr 0x3C (for the 64x48)
+  //display.begin(SSD1306_SWITCHCAPVCC, 0x3C);  // initialize with the I2C addr 0x3C (for the 64x48)
+  pinMode(16,OUTPUT);
+  digitalWrite(16, LOW);    // set GPIO16 low to reset OLED
+  delay(50); 
+  digitalWrite(16, HIGH); // while OLED is running, must set GPIO16 in high、
+  display.init();
+  display.flipScreenVertically();  
+  display.setFont(ArialMT_Plain_10);
+
 
   // Clear the buffer.
-  display.clearDisplay();
-  display.setTextSize(1);
-  display.setTextColor(WHITE);
-  display.setCursor(0,0);
-  display.println("ID:" + String(DEVICE_ID)); 
-  display.println("booting...");
+  display.clear();
+  //display.setTextSize(1);
+  //display.setTextColor(WHITE);
+  //display.setCursor(0,0);
+  display.drawString(0,0,"ID:" + String(DEVICE_ID)); 
+  display.drawString(0,15,"booting...");
   display.display();
 #endif
   Serial.begin(115200);//, SERIAL_8N1); 
@@ -267,22 +280,27 @@ void setup() {
   // GPS, hardcoded for T-Beam
   Serial1.begin(9600, SERIAL_8N1, 12, 15); 
   
-#ifdef LOGGING
-  bool result = SPIFFS.begin();
   
-  #ifdef DEBUG_OLED           
+#ifdef LOGGING
+  if(!SPIFFS.begin(FORMAT_SPIFFS_IF_FAILED)){
+        Serial.println("SPIFFS Mount Failed");
+        return;
+  }
+
+  // later integrate above with below
+  /*#ifdef DEBUG_OLED           
   if(result) display.println("FSys mnted");
   else display.println("FSys fail");
   display.display();
-  #endif
+  #endif*/
 
   // uncomment for reading back log file
   #ifdef READ_LOG_THEN_QUIT
-  Serial.begin(LOG_DUMP_BAUD);
-  while(!Serial) {;}
+  //Serial.begin(LOG_DUMP_BAUD);
+  //while(!Serial) {;}
   logfile = SPIFFS.open("/gps_log.txt", "r");
   #ifdef DEBUG_OLED  
-    display.clearDisplay();
+    display.clear(); //TODO
     display.setCursor(0,0);
     display.println("ID:" + String(DEVICE_ID)); 
     display.println("Logf dump!");
@@ -322,6 +340,7 @@ void setup() {
     
   // this opens the file in append mode
   logfile = SPIFFS.open("/gps_log.txt", "a");
+  logfile.println("log start");
   
   if (!logfile) { 
     #ifdef DEBUG_OLED  
@@ -352,13 +371,13 @@ void setup() {
     while (1);
   }
   //LoRa.onReceive(cbk);
-  //LoRa.receive();
+  LoRa.receive();
   
   LoRa.setSpreadingFactor(SPREADING_FACTOR);   
 
-  LoRa.setSyncWord(0xBE); //ignore everything but BE, defaults to 0x12
+  //LoRa.setSyncWord(0xBE); //ignore everything but BE, defaults to 0x12
   
-  LoRa.setTxPower(TX_PWR); //affects battery life how?
+  //LoRa.setTxPower(TX_PWR); //affects battery life how?
 
   LoRa.setSignalBandwidth(LORA_BW);
   
@@ -370,6 +389,8 @@ void setup() {
   //LoRa.enableCrc();
   //LoRa.disableCrc(); //default
 
+  //LoRa.receive();
+
   //byte b = LoRa.random(); //could use for determining which talisman to send
   
   Serial.println("LoRa init ok");
@@ -377,8 +398,8 @@ void setup() {
   leds.Begin();
   leds2.Begin();
 
-  leds.SetBrightness(10);
-  leds2.SetBrightness(10);
+  leds.SetBrightness(LED_BRIGHTNESS);
+  leds2.SetBrightness(LED_BRIGHTNESS);
   
   leds.Show();
   leds2.Show();
@@ -390,7 +411,8 @@ void setup() {
       leds.SetPixelColor(j+24+16, colorMap[DEVICE_ID]);
     leds.Show();
     delay(200);
-    leds.ClearTo(RgbColor(255,0,0));
+    leds.ClearTo(RgbColor(0,0,0));
+    leds.Show();
     delay(200);
   }
   leds.Show();
@@ -398,7 +420,8 @@ void setup() {
 
   ////leds.TheaterChase(RgbColor(255,255,0), RgbColor(0,0,50), 100);
   ////leds.Fade(RgbColor(255,0,0), RgbColor(0,255,0), 255, 20, FORWARD);
-  //leds.Scanner(colorMap[DEVICE_ID], LED_MIN_DELAY_MS);
+  leds.Scanner(colorMap[DEVICE_ID], LED_MIN_DELAY_MS);
+  leds2.Scanner(colorMap[DEVICE_ID], LED_MIN_DELAY_MS);
 
 #ifdef DEBUG_OLED
   display.println("fin setup!");
@@ -424,8 +447,8 @@ void loop() {
         lat = gps.location.lat();
         lon = gps.location.lng();
         numSat = (uint8_t) gps.satellites.value();
-        //spd = (float)gps.speed.mph(); 
-        Serial.println("gps updated -- " + String(hour) + " " + String(minute) + " " + String(second));
+        spd = (float)gps.speed.mph(); 
+        //Serial.println("gps updated -- " + String(hour) + " " + String(minute) + " " + String(second));
       }
       
       if(gps.date.isUpdated()) 
@@ -450,11 +473,11 @@ void loop() {
   //wdt_enable(5000);
 
   unsigned long currTime = millis();
-  if(((millisecond+currTime-gps_update_time)/LORA_SEND_DELAY_MS)%NUM_TALISMAN == DEVICE_ID && currTime - last_send >= LORA_SEND_DELAY_MS*(NUM_TALISMAN-1))
+  if(!RECEIVE_ONLY && ((millisecond+currTime-gps_update_time)/LORA_SEND_DELAY_MS)%NUM_TALISMAN == DEVICE_ID && currTime - last_send >= LORA_SEND_DELAY_MS*(NUM_TALISMAN-1))
   {
     Serial.println("LoRa sent " + String((millisecond+currTime-gps_update_time)/LORA_SEND_DELAY_MS) + " " + String(currTime - last_send));
     uint8_t selfPixelId = sendPkt(lat, lon, batPerc, numSat);
-    //Serial.println("LoRa sent start 2");
+    
     pixelId[DEVICE_ID] = selfPixelId;
     
     last_send = currTime;
@@ -463,7 +486,8 @@ void loop() {
   } // end lora send
   
   // something on the LoRa line
-  else if (LoRa.parsePacket() > 0) 
+  int packetSize = LoRa.parsePacket();
+  if (packetSize) 
   {
     // TODO: is this a better construction?
     /*while (LoRa.available()) {
@@ -474,10 +498,9 @@ void loop() {
     Serial.println("Snr: " + String(LoRa.packetSnr()));
     Serial.println();    
     */
-    Serial.println("LoRa recv 1 byte start");
-    
-    lora_buffer[pos%LORA_PKT_SIZE] = (unsigned char) LoRa.read();
-
+    for(int ii = 0; ii < packetSize; ii++)
+    {
+    lora_buffer[pos%LORA_PKT_SIZE] = (char) LoRa.read();
     if(lora_buffer[pos%LORA_PKT_SIZE] == 0xEF && lora_buffer[(pos-1)%LORA_PKT_SIZE] == 0xBE)
     {      
       if(lora_buffer[(pos+1)%LORA_PKT_SIZE] == 0xDE && lora_buffer[(pos+2)%LORA_PKT_SIZE] == 0xAD)
@@ -490,10 +513,13 @@ void loop() {
         *((unsigned char *)&distOthers + 2*devId) = lora_buffer[(pos+8)%LORA_PKT_SIZE];
         *((unsigned char *)&distOthers + 2*devId+1) = lora_buffer[(pos+9)%LORA_PKT_SIZE];
 
+        Serial.print("id=" + String(devId) + ": ");
+        Serial.println(playaStrFromPkt(hourOthers[devId], minuteOthers[devId], distOthers[devId]));
+
         #ifdef DEBUG_OLED
         display_oled_header();
-        display.println("recv id" + String(devId)); 
-        display.println(playaStrFromPkt(hourOthers[devId], minuteOthers[devId], distOthers[devId]));
+        display.drawString(0,14,"id=" + String(devId) + ": "); 
+        display.drawString(0,26,playaStrFromPkt(hourOthers[devId], minuteOthers[devId], distOthers[devId]));
         display.display();
         #endif
 
@@ -504,12 +530,12 @@ void loop() {
       }
     }
     pos++;
-    Serial.println("LoRa recv 1 byte");
+    }
   }
 
-  else if(button_state == MODE_MAP && currTime - last_led >= LED_MAP_UPDATE_DELAY_MS)
+  if(button_state == MODE_MAP && currTime - last_led >= LED_MAP_UPDATE_DELAY_MS)
   {
-    Serial.println("map update start");
+    //Serial.println("map update start");
     uint8_t currDevId = device_ctr%NUM_TALISMAN;
     uint8_t currPixelId = pixelId[currDevId];
     if(currPixelId < NUM_NEOPIXELS && currTime - updateTimes[currDevId] > STALE_MAP_POINT_SEC*1000)
@@ -534,7 +560,7 @@ void loop() {
     leds.Show();  
     device_ctr++;
     last_led = millis();
-    Serial.println("map update");
+    //Serial.println("map update");
   }
   else if(button_state == MODE_DIAGNOSTIC && currTime - last_diagnostic >= DIAGNOSTIC_UPDATE_DELAY_MS)
   {
@@ -569,7 +595,7 @@ void loop() {
       }
       if(i == DEVICE_ID && blinkState == false)
       {
-        leds.SetPixelColor(i+24+16, 0);
+        leds.SetPixelColor(i+24+16, RgbColor(0));
         blinkState = true;
       }
       else if(i == DEVICE_ID && blinkState == true)
@@ -586,7 +612,6 @@ void loop() {
 
   else if(currTime - last_bat_check > BATTERY_CHECK_DELAY_MS)
   {
-    Serial.println("bat check start");
     batPerc = getBatPercentage();
 
     if(batPerc < LOW_BATTERY)
@@ -594,45 +619,58 @@ void loop() {
       red_ring(); // low battery mode
     }
     last_bat_check = millis();
-    Serial.println("bat check");
   }
 
 #ifdef LOGGING
-  else if(currTime - last_log >= LOG_UPDATE_DELAY_MS)
+  if(currTime - last_log >= LOG_UPDATE_DELAY_MS)
   {
-    logfile.print(month); logfile.print(" "); // Hour (0-23) (u8)
-    logfile.print(day); logfile.print(" "); // Hour (0-23) (u8)
-    logfile.print(hour); logfile.print(" "); // Hour (0-23) (u8)
-    logfile.print(minute); logfile.print(" ");// Minute (0-59) (u8)
-    logfile.print(second); logfile.print(" "); // Second (0-59) (u8)
-    logfile.print(DEVICE_ID); logfile.print(" "); 
-    logfile.print(lat, 6); logfile.print(" ");
-    logfile.print(lon, 6); logfile.print(" ");
-    logfile.print(numSat); logfile.print(" ");
-    //logfile.print(spd); logfile.print(" ");
-    logfile.print(batPerc); logfile.print(" ");
-    logfile.println(millis()); //f.print(" ");
+    displacement = METERS_PER_DEGREE*sqrt((lat-prevLat)*(lat-prevLat) + (lon-prevLon)*(lon-prevLon));
+    if(displacement > 4 || spd > 1.0)
+    {
+      logfile.print(month); logfile.print(" "); // Hour (0-23) (u8)
+      logfile.print(day); logfile.print(" "); // Hour (0-23) (u8)
+      logfile.print(hour); logfile.print(" "); // Hour (0-23) (u8)
+      logfile.print(minute); logfile.print(" ");// Minute (0-59) (u8)
+      logfile.print(second); logfile.print(" "); // Second (0-59) (u8)
+      logfile.print(DEVICE_ID); logfile.print(" "); 
+      logfile.print(lat, 6); logfile.print(" ");
+      logfile.print(lon, 6); logfile.print(" ");
+      logfile.print(numSat); logfile.print(" ");
+      logfile.print(spd); logfile.print(" ");
+      logfile.print(batPerc); logfile.print(" ");
+      logfile.println(millis()); //f.print(" ");
+      // takes either 0.5 to 3.0 ms to log
+      last_log = millis();
+      prevLon = lon;
+      prevLat = lat;
+    }
+    else
+    {
+      // don't check again for delay time
+      last_log = millis(); 
+    }
     
-    last_log = millis();
-    Serial.println("log written");
   }
 #endif
 
 #ifdef DEBUG_OLED
   else if(currTime - last_oled >= OLED_UPDATE_DELAY_MS)
   {
-    display_oled_header();
-    display.print(fmtPlayaStr(lat, lon));
-    display.display();
+    
+    //display_oled_header();
+    //display.drawString(0,26, fmtPlayaStr(lat, lon));
+    //display.display();
 
     last_oled = millis();
   }
 #endif
 
-  else if(button_state == MODE_PARTY) // &&  currTime - last_led >= LED_PARTY_UPDATE_DELAY_MS)
+  else if(button_state == MODE_PARTY || button_state == MODE_PARTY2) // &&  currTime - last_led >= LED_PARTY_UPDATE_DELAY_MS)
   {
-    //leds.Update(); 
+    leds.Update(); 
     leds.Show();
+    leds2.Update();
+    leds2.Show();
     //Serial.println("party  update");
     
   }
@@ -645,38 +683,55 @@ void loop() {
     switch(button_state)
     {
       case MODE_PARTY:
+          button_state = MODE_PARTY2;
+          leds.ActivePattern = RAINBOW_CYCLE;
+          leds.RainbowCycle(30);
+          leds.SetBrightness(50);
+          leds2.RainbowCycle(30);
+          leds2.SetBrightness(50);
+          break;
+      case MODE_PARTY2:
           button_state = MODE_MAP;
-          //leds.ActivePattern = NONE;
+          leds.ActivePattern = NONE;
+          leds2.ActivePattern = NONE;
 
           ////leds.ActivePattern = FADE_INNER_RING;
           ////leds.Interval = 100;
           ////leds.TotalSteps = LED_BRIGHTNESS_FADE;
-          ////leds.setBrightness(LED_BRIGHTNESS_FADE);
-          ////RgbColor1 = RgbColor(0,0,0);
-          ////RgbColor2 = RgbColor(LED_BRIGHTNESS_FADE,LED_BRIGHTNESS_FADE,LED_BRIGHTNESS_FADE);
+          ////leds.SetBrightness(LED_BRIGHTNESS_FADE);
+          ////color1 = RgbColor(0,0,0);
+          ////color2 = RgbColor(LED_BRIGHTNESS_FADE,LED_BRIGHTNESS_FADE,LED_BRIGHTNESS_FADE);
           ////leds.StartIndex = 24;
           ////leds.EndIndex = 24+16;
-          //leds.clear();
+          leds.ClearTo(RgbColor(0));
           leds.Show(); 
+          leds2.ClearTo(RgbColor(0));
+          leds2.Show(); 
           Serial.println("map mode");
           break;
       case MODE_MAP:
           button_state = MODE_DIAGNOSTIC;
-          //leds.ActivePattern = NONE;
-          //leds.clear();
+          leds.ActivePattern = NONE;
+          leds.ClearTo(RgbColor(0));
           leds.Show(); 
+          leds2.ActivePattern = NONE;
+          leds2.ClearTo(RgbColor(0));
+          leds2.Show(); 
           Serial.println("diagnostic mode");
           break;
       case MODE_DIAGNOSTIC:
           button_state = MODE_TRACKER_ONLY;
-          //leds.ActivePattern = NONE;
-          //leds.clear();
+          leds.ActivePattern = NONE;
+          leds.ClearTo(RgbColor(0));
           leds.Show(); 
+          leds2.ActivePattern = NONE;
+          leds2.ClearTo(RgbColor(0));
+          leds2.Show(); 
           Serial.println("tracker mode");
           break;
       case MODE_TRACKER_ONLY:
           button_state = MODE_PARTY;
-          //RingComplete();
+          RingComplete();
           Serial.println("party mode");
           break;
       default:
@@ -686,56 +741,109 @@ void loop() {
   }
 }
 
-/*void RingComplete()
+void RingComplete()
 {
-    
-    if(leds.ActivePattern != FADE_INNER_RING)
+    if(button_state == MODE_PARTY)//leds.ActivePattern != FADE_INNER_RING)
     {
-      
       pattern randPattern = (pattern)(random(5)+1); // starts with NONE 
       direction dir = (direction)random(2);
-      uint32_t color2 = RgbColor1;
-      uint32_t color1 = leds.Wheel(random(255));
       
+      RgbColor color1 = leds.Wheel(random(255));
+      RgbColor color2 = colorMap[DEVICE_ID];
+       
       if(randPattern == RAINBOW_CYCLE) 
       {
         leds.RainbowCycle(LED_MIN_DELAY_MS, dir);
-        leds.setBrightness(LED_BRIGHTNESS_FADE);
+        leds.SetBrightness(LED_BRIGHTNESS_FADE);
+        leds2.RainbowCycle(LED_MIN_DELAY_MS, dir);
+        leds2.SetBrightness(LED_BRIGHTNESS_FADE);
       }
       else if(randPattern == FADE)
       {
         leds.Fade(color2, color1, LED_BRIGHTNESS_FADE*2, LED_MIN_DELAY_MS, dir);
-        leds.setBrightness(LED_BRIGHTNESS_FADE);
+        leds.SetBrightness(LED_BRIGHTNESS_FADE);
+        leds2.Fade(color2, color1, LED_BRIGHTNESS_FADE*2, LED_MIN_DELAY_MS, dir);
+        leds2.SetBrightness(LED_BRIGHTNESS_FADE);
       }
       else if(randPattern == THEATER_CHASE)
       {
         leds.TheaterChase(color1, color2, random(80) + LED_MIN_DELAY_MS, dir);
-        leds.setBrightness(LED_BRIGHTNESS);
+        leds.SetBrightness(LED_BRIGHTNESS);
+        leds2.TheaterChase(color1, color2, random(80) + LED_MIN_DELAY_MS, dir);
+        leds2.SetBrightness(LED_BRIGHTNESS);
       }
       else if(randPattern == COLOR_WIPE)
       {
-        RgbColorWipe(color1, random(20) + LED_MIN_DELAY_MS, dir);
-        leds.setBrightness(LED_BRIGHTNESS);
+        leds.ColorWipe(color1, random(20) + LED_MIN_DELAY_MS, dir);
+        leds.SetBrightness(LED_BRIGHTNESS);
+        leds2.ColorWipe(color1, random(20) + LED_MIN_DELAY_MS, dir);
+        leds2.SetBrightness(LED_BRIGHTNESS);
       }
       else if(randPattern == SCANNER)
       {
-        leds.Scanner(colorMap[DEVICE_ID], random(40) + LED_MIN_DELAY_MS);
-        leds.setBrightness(LED_BRIGHTNESS_FADE);
+        leds.Scanner(colorMap[DEVICE_ID], LED_MIN_DELAY_MS);
+        leds.SetBrightness(LED_BRIGHTNESS_FADE);
+        leds2.Scanner(colorMap[DEVICE_ID], LED_MIN_DELAY_MS);
+        leds2.SetBrightness(LED_BRIGHTNESS_FADE);
       }    
       else
       {
-        RgbColorSet(colorMap[DEVICE_ID]);
-        leds.setBrightness(LED_BRIGHTNESS);
+        leds.ColorSet(colorMap[DEVICE_ID]);
+        leds.SetBrightness(LED_BRIGHTNESS);
+        leds2.ColorSet(colorMap[DEVICE_ID]);
+        leds2.SetBrightness(LED_BRIGHTNESS);
       }
     }
-}*/
+    if(button_state == MODE_PARTY)
+    {
+      pattern randPattern = (pattern)(random(5)+1); // starts with NONE 
+      direction dir = (direction)random(2);
+      
+      RgbColor color1 = leds.Wheel(random(255));
+      RgbColor color2 = colorMap[DEVICE_ID];
+       
+      if(randPattern == RAINBOW_CYCLE) 
+      {
+        leds2.RainbowCycle(LED_MIN_DELAY_MS, dir);
+        leds2.SetBrightness(LED_BRIGHTNESS_FADE);
+      }
+      else if(randPattern == FADE)
+      {
+        leds2.Fade(color2, color1, LED_BRIGHTNESS_FADE*2, LED_MIN_DELAY_MS, dir);
+        leds2.SetBrightness(LED_BRIGHTNESS_FADE);
+      }
+      else if(randPattern == THEATER_CHASE)
+      {
+        leds2.TheaterChase(color1, color2, random(80) + LED_MIN_DELAY_MS, dir);
+        leds2.SetBrightness(LED_BRIGHTNESS);
+      }
+      else if(randPattern == COLOR_WIPE)
+      {
+        leds2.ColorWipe(color1, random(20) + LED_MIN_DELAY_MS, dir);
+        leds2.SetBrightness(LED_BRIGHTNESS);
+      }
+      else if(randPattern == SCANNER)
+      {
+        leds2.Scanner(colorMap[DEVICE_ID], LED_MIN_DELAY_MS);
+        leds2.SetBrightness(LED_BRIGHTNESS_FADE);
+      }    
+      else
+      {
+        leds2.ColorSet(colorMap[DEVICE_ID]);
+        leds2.SetBrightness(LED_BRIGHTNESS);
+      }
+
+      
+    }
+}
 
 uint8_t getBatPercentage()
 {
-  float batVolt = 5.0*((float)analogRead(A0))/1023.0; 
-  uint8_t batPerc = (uint8_t)(100.0*(batVolt - 3.7)/0.6); // 4.3 = 100%, 3.7 = 0%
+  float batVolt = 10.0*((float)analogRead(BATTERY_PIN))/4095.0; 
+  uint8_t batPerc = (uint8_t)(100.0*(batVolt - 3.7)/(5.0-3.7)); // 5.0 = 100%, 3.7 = 0%
   if(batPerc > 100) batPerc = 100;
   if(batPerc < 0) batPerc = 0;
+  Serial.println("batPerc= " + String(batPerc));
   return batPerc;
 }
 
@@ -745,7 +853,7 @@ uint8_t getBatPercentage()
 void red_ring()
 {
   #ifdef DEBUG_OLED
-  display.clearDisplay();
+  display.clear();
   display.display();
   #endif
   
@@ -892,11 +1000,11 @@ uint8_t sendPkt(double lat, double lon, uint8_t batPerc, uint8_t numSat)
     LoRa.write((byte)255);
     LoRa.write((byte)255);
     LoRa.write((byte)255);
-    Serial.write((byte *) &lat, sizeof(lat)); // 8 bytes in a double
-    Serial.write((byte *) &lon, sizeof(lon)); // 8 bytes in a double
+    //Serial.write((byte *) &lat, sizeof(lat)); // 8 bytes in a double
+    //Serial.write((byte *) &lon, sizeof(lon)); // 8 bytes in a double
     LoRa.write((byte)0xBE); //BEEF is 2-byte end of message
     LoRa.write((byte)0xEF);   
-    LoRa.endPacket();   
+    LoRa.endPacket(true);   
   
     return 255;
   }
@@ -918,6 +1026,9 @@ uint8_t sendPkt(double lat, double lon, uint8_t batPerc, uint8_t numSat)
   
     uint8_t hour = clock_minutes / 60;
     uint8_t minute = clock_minutes % 60;
+
+    Serial.println("hour=" + String(hour) + " minute=" + String(minute));
+    Serial.println(fmtPlayaStr(lat, lon));
   
     if(dist > 65534) dist = 65535;
     
@@ -946,26 +1057,50 @@ uint8_t sendPkt(double lat, double lon, uint8_t batPerc, uint8_t numSat)
 void display_oled_header()
 {
   #ifdef DEBUG_OLED
-  display.clearDisplay();
-  display.setCursor(0,0);
-  display.println(String(DEVICE_ID) + "v" + String(VERSION,1) + " " + String(millis()/60000) + "m"); 
+  display.clear();
+  //display.setCursor(0,0);
+  display.drawString(0,0,String(DEVICE_ID) + "v" + String(VERSION,1) + " " + String(millis()/60000) + "m"); 
   //display.println(lat, 6);
   //display.println(lon, 6);
   //display.println(String(spd) + "mph");
   //display.println(String(hour) + ":" + String(minute));
   //float batVolt = 5.0*((float)analogRead(A0))/1023.0; 
   //display.println(String(batVolt)); 
-  display.println("#s=" + String(numSat) + " %" + String(batPerc)); 
+  display.drawString(64, 0, "#s=" + String(numSat) + " %" + String(batPerc)); 
   #endif
 }
+
+//uint8_t ringIdx[] =      {   2,   4,   6,    8,   10,  12,     13,  14};
+uint8_t chanIdx[] =      {   2,   2,   2,    2,       2,   2,     2,   2};
+uint8_t numLedByChan[] = { 27,  24,  20,  16,  12,   8,       5,   3};
+uint8_t numRingsTotal = 8;
+uint8_t numLedByRing[] = { 27,  24,  20,  16,  12,  8,  5, 3};
 
 uint8_t get_pixel_id(uint8_t hr, uint8_t minute, uint16_t dist)
 {
   if(hr == 255 && minute == 255)
     return 255;
-  
-  int refRing = getReferenceRing((float)dist);
-  if(refRing < 2) // man to esplanade
+    
+  int ring_i = getReferenceRing((float)dist);
+  if(ring_i > numRingsTotal) ring_i = numRingsTotal;
+  ring_i = numRingsTotal- ring_i;
+
+  int offset = 0;
+  for(int i = 0; i < ring_i-1; i++)
+  {
+    offset += numLedByRing[i];
+  }
+
+  // 12*60 
+
+  float alpha = (hr*60 + minute)/(12.0*60.0);
+  if(alpha > 1.0) alpha = 1.0;
+
+  offset += (int)alpha*numLedByRing[ring_i];
+
+  return offset;
+
+  /*if(refRing < 2) // man to esplanade
   {
     //return 39-(((int)hr%12)*60 + minute)/45; // middle ring (39 to 24)
     return 40+((((int)hr%12)*60 + minute+30)/60+1)%12; // center ring (40 to 51)
@@ -973,6 +1108,6 @@ uint8_t get_pixel_id(uint8_t hr, uint8_t minute, uint16_t dist)
   else
   {
     return (((((int)hr%12)*60 + minute+15)/30)+1)%24; // outer ring (0-23)
-  }
+  }*/
 }
 
