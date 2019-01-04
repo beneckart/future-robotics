@@ -39,6 +39,8 @@ float SCALE = 1.0;
 float MINLAT = 0;
 float MINLON = 0;
 
+int MAXDIST = 1000;
+
 boolean REVERSE = true;
 
 int[] deviceLocX = new int[NUM_TALISMAN];
@@ -82,7 +84,8 @@ void setup()
   frameRate(30);
   
   printArray(Serial.list()); 
-  //myPort = new Serial(this, "/dev/ttyUSB0", 9600);
+  //myPort = new Serial(this, "/dev/ttyACM0", 9600);
+  myPort = new Serial(this, "COM28", 115200);
   
   // set up serial port to listen
   // buiuld circular buffer (just like arduino)
@@ -96,7 +99,8 @@ void setup()
   }
   
   // Connect to the local instance of fcserver
-  opc = new OPC(this, "127.0.0.1", 7890);
+  //opc = new OPC(this, "127.0.0.1", 7890);
+  opc = new OPC(this, "10.10.10.1", 7890);
   
   opc.showLocations(SHOW_LOCATIONS);
   
@@ -104,8 +108,6 @@ void setup()
 
   dot = loadImage("dot3.png");
   
-  
-
   String[] lines = loadStrings("MM_latlon");
   float[] latArr = new float[lines.length];
   float[] lonArr = new float[lines.length];
@@ -231,7 +233,7 @@ float rotateY(float x, float y, float theta)
     return yr;
 }
 
-/*void serialEvent(Serial p) 
+void serialEvent(Serial p) 
 { 
     int readIt =  (int)myPort.read();
     if(readIt != -1)
@@ -257,7 +259,7 @@ float rotateY(float x, float y, float theta)
                 numSatOthers[devId] = lora_buffer[(pos+5)%LORA_PKT_SIZE];
                 hourOthers[devId] = lora_buffer[(pos+6)%LORA_PKT_SIZE];
                 minuteOthers[devId] = lora_buffer[(pos+7)%LORA_PKT_SIZE];
-                distOthers[devId] = lora_buffer[(pos+8)%LORA_PKT_SIZE] + lora_buffer[(pos+9)%LORA_PKT_SIZE]*256;
+                distOthers[devId] = min(MAXDIST, lora_buffer[(pos+8)%LORA_PKT_SIZE] + lora_buffer[(pos+9)%LORA_PKT_SIZE]*256);
 
                 println(str(hourOthers[devId]) + " " + str(minuteOthers[devId]) + " " + str(distOthers[devId]));
 
@@ -269,7 +271,7 @@ float rotateY(float x, float y, float theta)
         }
         pos++;
     }
-}*/
+}
 
 void fakeFrame()
 {
@@ -278,7 +280,7 @@ void fakeFrame()
       numSatOthers[devId] = 11;
       hourOthers[devId] = 12;
       minuteOthers[devId] = 30;
-      distOthers[devId] = 1000;
+      distOthers[devId] = 70000;
 
       //println(str(hourOthers[devId]) + " " + str(minuteOthers[devId]) + " " + str(distOthers[devId]));
 
@@ -297,7 +299,8 @@ void draw()
   //{
     
     
-    tint(colorMap[1]);
+    /*tint(colorMap[1]);
+    brightness(1);
     for(int i = 0; i < LATARR.length; i++)
     {
       int[] pixel_coord = to_pixel_coord(LATARR[i], LONARR[i], SCALE, MINLAT, MINLON, REVERSE);
@@ -305,9 +308,9 @@ void draw()
       //opc.led(idArr[i], pixel_coord[0], pixel_coord[1]);  
       float dotSize = height * DOT_SIZE*.5;
       image(dot, pixel_coord[0] - dotSize/2, pixel_coord[1] - dotSize/2, dotSize, dotSize);
-    }
+    }*/
   //}
-  
+    //brightness(100);
     //int i = (frameIdx/15)%NUM_TALISMAN;
     for(int i = 0; i < NUM_TALISMAN; i++)
     {

@@ -17,6 +17,7 @@ void setup()
   
   // Connect to the local instance of fcserver
   opc = new OPC(this, "127.0.0.1", 7890);
+  //opc = new OPC(this, "10.0.0.14", 7890);
   
   opc.setColorCorrection(2.5, 1.0, 1.0, 1.0);
 
