@@ -395,15 +395,18 @@ def clean_logs(outputfilename, dirs=['.']):
 def process_datum(key, datum):
     #data[(devID_unique, dev_id)].append((month,day,hour,minute,second,lat,lon,num_sat,spd,bat_perc,time_since_boot))
     dev_id = key[0] #keymap[key[0]]
+    reported_id = key[1]
     month,day,hour,minute,second,lat,lon,num_sat,spd,bat_perc,time_since_boot = datum
     
-    # note: 8/23 was thursday before BM
-    #       8/25 was saturday before BM
-    if month <= 8 and day <= 23: return 0, 0
+    # note: this mainly prevents date=0 data from before gps latches on correctly
+    if month <= 8 and day <= 23: 
+        return 0, 0
+    if month >= 9 and day >= 4: 
+        return 0, 0
     time_in_s = second + minute*60 + hour*60*60 + day*24*60*60 + month*31*24*60*60
-    return time_in_s, [dev_id, lat, lon, num_sat, spd, bat_perc, time_since_boot, month, day, hour, minute, second]
+    return time_in_s, [dev_id, reported_id, lat, lon, num_sat, spd, bat_perc, time_since_boot, month, day, hour, minute, second]
     
-def gen_playback_log(f_pickle):
+def gen_playback_log(f_pickle, ofName='playback.txt'):
     playback_data = []
     
     dataset = pickle.load(open(f_pickle))
@@ -420,13 +423,13 @@ def gen_playback_log(f_pickle):
     #print 
     #print playback_data[:10]
     
-    f = open('playback.txt','w')
+    f = open(ofName,'w')
     for time_in_s, metadata in playback_data:
-        dev_id, lat, lon, num_sat, spd, bat_perc, time_since_boot, month, day, hour, minute, second = metadata
-        f.write("%d %s %f %f %d %f %f %d %d %d %d %d %d\n" % (time_in_s, dev_id, lat, lon, num_sat, spd, bat_perc, time_since_boot, month, day, hour, minute, second))
+        dev_id, reported_id, lat, lon, num_sat, spd, bat_perc, time_since_boot, month, day, hour, minute, second = metadata
+        f.write("%d %s %d %f %f %d %f %f %d %d %d %d %d %d\n" % (time_in_s, dev_id, reported_id, lat, lon, num_sat, spd, bat_perc, time_since_boot, month, day, hour, minute, second))
     f.close()
     
-    print 'wrote playback file to playback.txt'
+    print 'wrote playback file to %s' % ofName
 
 if __name__ == '__main__':
     print 'usage: "python parse_logs.py outputfilename"'
@@ -439,7 +442,6 @@ if __name__ == '__main__':
     makegoogleheatmap(of_cleaned)
     
     print 'making playback file...'
-    gen_playback_log(of_pickle)
+    gen_playback_log(of_pickle, 'playback2018.txt')
     
     print 'done!'
-
