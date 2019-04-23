@@ -38,8 +38,10 @@ Device ('60D8C53A7D80', 3):    57 good entries
 Device ('60D8C53A7D80', 5): 12236 good entries
 Device ('60D8C53A7D80', 9):    44 good entries
 
-JP (verified by ID), but was 8 on the box... might have been Ben on wednesday as ID 11
+JP (verified by ID), but was 8 on the box... might have been Ben on wednesday as ID 11. was Ash during marathon
 Device ('7CD8C53A7D80', 11): 17131 good entries 
+
+
 Device ('7CD9C53A7D80', 0):    16 good entries
 Device ('7CD9C53A7D80', 1):  1132 good entries
 Device ('7CD9C53A7D80', 3):   757 good entries
@@ -274,7 +276,7 @@ def makegoogleheatmap(ifname, ofname='googleheatmap.html'):
     of.write(html)
     of.close()
     
-def clean_logs(outputfilename):
+def clean_logs(outputfilename, dirs=['.']):
     ofName_cleaned = outputfilename + "_cleaned.txt"
     ofName_pickle = outputfilename + ".pickle"
     
@@ -284,20 +286,34 @@ def clean_logs(outputfilename):
     num_start_log = 0
     num_end_log = 0
 
-    num_malformed_oob = 0
     num_malformed_bad_token = 0
     num_malformed_num_tokens = 0
     num_dupes = 0
+    
+    bm_ll = [41, -119]
+    
+    oob_dict = {
+    'clarksville':[36.545088, -87.315514],
+    'pittsburgh':[40.424187, -79.982342],
+    'san fransisco':[37, -122],
+    'zero lat lon':[0, 0]}
+    num_malformed_oob = defaultdict(int)
 
     data = defaultdict(list)
 
     #inputfiles = ['latlon_dev%02d_try00.txt' % i for i in range(8)]
-    totalFiles = sorted(glob("*.txt"))
+    totalFiles = []
+    for diri in dirs: 
+        print 'Looking for: %s' % diri + "/*.*"
+        totalFiles.extend(glob(diri + "/*.*"))
+    totalFiles = sorted(totalFiles)
     for i, fname in enumerate(totalFiles):
         print i, fname
     
     inp = raw_input('pick files to use (ex. 0 1 2 5 7): ')
     inputfiles = [totalFiles[int(i)] for i in inp.split()]
+
+
     
     dupe_detect = {}
 
@@ -330,10 +346,12 @@ def clean_logs(outputfilename):
                     spd = float(tokens[9])
                     bat_perc = int(tokens[10])
                     time_since_boot = int(tokens[11])
-            
-                    if abs(lat - 40) > 5 or abs(-lon - 119) > 10:
-                        print 'MALFORMED (latlon out of bounds): ' + line
-                        num_malformed_oob += 1
+
+                    if abs(lat - bm_ll[0]) > 2 or abs(lon - bm_ll[1]) > 2:    
+                        for place, oob_ll in oob_dict.iteritems():
+                            if abs(lat - oob_ll[0]) < 5 and abs(lon - oob_ll[1]) < 5:
+                                print 'MALFORMED (latlon out of bounds -- %s): ' % place + line
+                                num_malformed_oob[place] += 1
                     else:
                         if (lat, lon) in dupe_detect:
                             num_dupes += 1
@@ -360,9 +378,10 @@ def clean_logs(outputfilename):
     print "num good entries: %d" % num_good
     print "num bad entries (# tokens): %d" % num_malformed_num_tokens
     print "num bad entries (bad token): %d" % num_malformed_bad_token 
-    print "num lat lon out of bounds: %d" % num_malformed_oob
+    for place, numoob in num_malformed_oob.iteritems():
+        print "num lat lon out of bounds %s: %d" % (place, numoob) 
     print "num dupes: %d" % num_dupes
-    print "percentage good: %f" % (100.0*num_good/(num_good+num_malformed_num_tokens+num_malformed_bad_token+num_malformed_oob+num_dupes))
+    print "percentage good: %f" % (100.0*num_good/(num_good+num_malformed_num_tokens+num_malformed_bad_token))
     print "sanity check: %d log starts, %d log ends" % (num_start_log, num_end_log)
     print
     
@@ -414,7 +433,7 @@ if __name__ == '__main__':
     
     outputfilename = sys.argv[1]
     
-    of_cleaned, of_pickle = clean_logs(outputfilename)
+    of_cleaned, of_pickle = clean_logs(outputfilename, dirs=['./logs_2017','./logs_2018'])
     
     print 'making google heatmap...'
     makegoogleheatmap(of_cleaned)
