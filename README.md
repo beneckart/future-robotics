@@ -1,4 +1,4 @@
-![FR Banner](http://wiki.thefuturerobots.com/lib/exe/fetch.php?cache=&media=fr-horizontal.png)
+![FR Banner](https://github.com/beneckart/future-robotics/blob/master/graphics/banner_small.png?raw=true)
 ## A collection of projects created by the Future Robots burning man camp 
 
 
