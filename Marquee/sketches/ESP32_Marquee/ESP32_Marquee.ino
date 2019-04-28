@@ -1,35 +1,12 @@
-/*
-ESPOPC -- Open Pixel Control server for ESP8266.
-
-The MIT License (MIT)
-
-Copyright (c) 2015 by bbx10node@gmail.com
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-*/
-
 #include <WiFi.h>
+#include <NeoPixelBus.h>
 
 //const char* ssid = "FutureRobots";
 //const char* password = "benbenben";
-const char* ssid = "camp2";
-const char* password = "ForTheKids";
+const char* ssid = "Bud Hole";
+const char* password = "allonewordnocaps";
+//const char* ssid = "camp2";
+//const char* password = "ForTheKids";
 
 //MDNSResponder mdns;
 // Actual name will be "espopc.local"
@@ -39,37 +16,15 @@ const char* password = "ForTheKids";
 // specify the port to listen on as an argument
 WiFiServer server(7890);
 
-#define OSCDEBUG    (0)
+#define OSCDEBUG  1
 
-#include <NeoPixelBus.h>
-const int PixelCount = 500;
-const int PixelPin = 2;
+const int PixelCount = 120;
 
-// three element pixels, in different order and speeds
-//NeoPixelBus<NeoGrbFeature, Neo800KbpsMethod> strip(PixelCount, PixelPin);
-//NeoPixelBus<NeoRgbFeature, Neo400KbpsMethod> strip(PixelCount, PixelPin);
+#define LED_PIN1 2
+#define LED_PIN2 14
 
-// You can also use one of these for Esp8266,
-// each having their own restrictions
-//
-// These two are the same as above as the DMA method is the default
-// NOTE: These will ignore the PIN and use GPI03 pin
-//NeoPixelBus<NeoGrbFeature, NeoEsp8266Dma800KbpsMethod> strip(PixelCount, PixelPin);
-//NeoPixelBus<NeoRgbFeature, NeoEsp8266Dma400KbpsMethod> strip(PixelCount, PixelPin);
-
-// Uart method is good for the Esp-01 or other pin restricted modules
-// NOTE: These will ignore the PIN and use GPI02 pin
-NeoPixelBus<NeoGrbFeature, NeoEsp32I2s0800KbpsMethod> strip(PixelCount, PixelPin);//, RingComplete);
-//NeoPixelBus<NeoGrbFeature, NeoEsp8266Uart800KbpsMethod> strip(PixelCount, PixelPin);
-//NeoPixelBus<NeoRgbFeature, NeoEsp8266Uart400KbpsMethod> strip(PixelCount, PixelPin);
-
-// The bitbang method is really only good if you are not using WiFi features of the ESP
-// It works with all but pin 16
-//NeoPixelBus<NeoGrbFeature, NeoEsp8266BitBang800KbpsMethod> strip(PixelCount, PixelPin);
-//NeoPixelBus<NeoRgbFeature, NeoEsp8266BitBang400KbpsMethod> strip(PixelCount, PixelPin);
-
-// four element pixels, RGBW
-//NeoPixelBus<NeoRgbwFeature, Neo800KbpsMethod> strip(PixelCount, PixelPin);
+NeoPixelBus<NeoGrbFeature, NeoEsp32I2s0800KbpsMethod> leds1(PixelCount, LED_PIN1);
+NeoPixelBus<NeoGrbFeature, NeoEsp32I2s1800KbpsMethod> leds2(PixelCount, LED_PIN2);
 
 // Gamma correction 2.2 look up table
 uint8_t GammaLUT[256];
@@ -85,16 +40,13 @@ void fillGammaLUT(float gamma)
   }
 }
 
-#include "soc/soc.h"
-#include "soc/rtc_cntl_reg.h"
 void setup() {
-  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); //disable brownout detector
   Serial.begin(115200);
   Serial.println();
 
   // this resets all the neopixels to an off state
-  strip.Begin();
-  strip.Show();
+  leds1.Begin(); leds2.Begin();
+  leds1.Show(); leds2.Show();
 
   // Connect to WiFi network
   Serial.println();
@@ -108,6 +60,7 @@ void setup() {
     delay(500);
     Serial.print(".");
   }
+  
   Serial.println("");
   Serial.println("WiFi connected");
 
@@ -115,7 +68,7 @@ void setup() {
   Serial.println(WiFi.localIP());
 
   // Set up mDNS responder:
-  /*if (!mdns.begin(myDNSName, WiFi.localIP())) {
+ /* if (!mdns.begin(myDNSName, WiFi.localIP())) {
     Serial.println("Error setting up MDNS responder!");
   }
   else {
@@ -128,8 +81,6 @@ void setup() {
   Serial.println("Server listening on port 7890");
 
   fillGammaLUT(2.2);
-
-  Serial.println("Filled Gamma LUT");
 }
 
 WiFiClient client;
@@ -141,7 +92,8 @@ void clientEvent()
   static int packetParse = 0;
   static uint8_t pktChannel, pktCommand;
   static uint16_t pktLength, pktLengthAdjusted, bytesIn;
-  static uint8_t pktData[1500];
+  //static uint8_t pktData[PixelCount*3];
+  static uint8_t pktData[1500*3];
   uint16_t bytesRead;
   size_t frame_count = 0, frame_discard = 0;
 
@@ -149,7 +101,6 @@ void clientEvent()
     // Check if a client has connected
     client = server.available();
     if (!client) {
-      //Serial.println("no client");
       return;
     }
     Serial.println("new OPC client");
@@ -159,11 +110,11 @@ void clientEvent()
     Serial.println("OPC client disconnected");
     client = server.available();
     if (!client) {
-      //Serial.println("closing connection");
       return;
     }
   }
 
+  //should this be while client.connected()? and then if .available()?
   while (client.available()) {
     switch (packetParse) {
       case 0: // Get pktChannel
@@ -195,7 +146,7 @@ void clientEvent()
         Serial.printf("pktLength %u\r\n", pktLength);
 #endif
         if (pktLength > sizeof(pktData)) {
-          //Serial.println("Packet length exceeds size of buffer! Data discarded");
+          Serial.println("Packet length exceeds size of buffer! Data discarded");
           pktLengthAdjusted = sizeof(pktData);
         }
         else {
@@ -206,33 +157,42 @@ void clientEvent()
         bytesRead = client.read(&pktData[bytesIn],
             minsize(sizeof(pktData), pktLengthAdjusted) - bytesIn);
         bytesIn += bytesRead;
-        //Serial.printf("bytesRead=%d, pktLenAdj=%d\r\n", bytesIn, pktLengthAdjusted);
         if (bytesIn >= pktLengthAdjusted) {
-          if ((pktCommand == 0) && (pktChannel <= 1)) {
+          if ((pktCommand == 0) && (pktChannel <= 2)) {
             int i;
             uint8_t *pixrgb;
             pixrgb = pktData;
             for (i = 0; i < minsize((pktLengthAdjusted / 3), PixelCount); i++) {
-              strip.SetPixelColor(i,
+              
+              if(pktChannel==1)
+              {
+                leds1.SetPixelColor(i,
                   RgbColor(GammaLUT[*pixrgb++],
                            GammaLUT[*pixrgb++],
                            GammaLUT[*pixrgb++]));
+              }
+              if(pktChannel==2)
+              {
+                leds2.SetPixelColor(i,
+                  RgbColor(GammaLUT[*pixrgb++],
+                           GammaLUT[*pixrgb++],
+                           GammaLUT[*pixrgb++]));
+              }               
             }
             // Display only the first frame in this cycle. Buffered frames
             // are discarded.
-            if (true || frame_count == 0) {
+            if (frame_count == 0) {
 #if OSCDEBUG
               Serial.print("=");
               unsigned long startMicros = micros();
 #endif
-              strip.Show();
+              leds2.Show(); leds2.Show();
 #if OSCDEBUG
               Serial.printf("%lu\r\n", micros() - startMicros);
 #endif
             }
             else {
               frame_discard++;
-              //Serial.printf("discarded! frame_count=%d\r\n", frame_discard);
             }
             frame_count++;
           }
@@ -247,7 +207,6 @@ void clientEvent()
         bytesIn += bytesRead;
         if (bytesIn >= pktLength) {
           packetParse = 0;
-          //Serial.printf("read extra data outside packet length\r\n");
         }
         break;
     }
@@ -255,10 +214,6 @@ void clientEvent()
 #if OSCDEBUG
   if (frame_discard) {
     Serial.printf("discard %u\r\n", frame_discard);
-  }
-  else
-  {
-    Serial.printf("client event fnished\r\n");
   }
 #endif
 }

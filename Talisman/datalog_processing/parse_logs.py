@@ -107,6 +107,23 @@ namemap['7CD9C53A7D80'] = '??'
 
 """
 
+nameMap = {};
+nameMap["FCD8C53A7D80"] = "Steve#1"#); //0, 2 entries
+nameMap["C8D7C53A7D80"] = "Hank#2"#); //1, 2411 entries
+nameMap["54D8C53A7D80"] = "Dad"#); //2, 17.5k entries
+nameMap["88D8C53A7D80"] = "Steve#4"#); //3, 2 entries
+nameMap["A8D8C53A7D80"] = "Hank#1"#); //4, 278 entries
+nameMap["18D8C53A7D80"] = "Minimap"#); //0, 10k entries
+nameMap["E0D8C53A7D80"] = "Elliot"#); //4, 13k entries (2.7k w/0 as well)
+nameMap["60D8C53A7D80"] = "Jimmy"#); //5, 12k entries (3: 2 entries, 9: 44 entries)
+nameMap["98D7C53A7D80"] = "Luca"#); //6, 14.4k entries (2k data points w/5 as well)
+nameMap["7CD9C53A7D80"] = "??-1"#); // 0 entries
+nameMap["??"] = "??-2"#); //
+nameMap["08D9C53A7D80"] = "Shervin"#); //9, 14k entries (4:48, 5:412, 15:908)
+nameMap["94D8C53A7D80"] = "JP"#); //11, 10k entries
+nameMap["7CD8C53A7D80"] = "Ash"#); //11, 17.1k entries
+
+
 import sys
 from collections import defaultdict
 from glob import glob
@@ -431,6 +448,66 @@ def gen_playback_log(f_pickle, ofName='playback.txt'):
     
     print 'wrote playback file to %s' % ofName
 
+def process_battery_info(f_pickle):
+    '''
+    Notes: seems like, for Tv2, my best guess is
+        1) battery life is maybe 5 hours in party mode
+        2) battery life is maybe 7.5 hours when not always using party mode
+        3) battery indicator might be complete bs-- figure this out for Tv3
+        4) There is an outlier for Elliot-- was he externally powering the device? He lasted 15 hours.
+        5) Tv1's seem to last about 8 hours on average (there it is more clear since the battery life gauge actually worked)
+    '''
+
+    playback_data = []
+    
+    dataset = pickle.load(open(f_pickle))
+    for key, data in dataset.iteritems():
+        for datum in data:
+            time_in_s, metadata = process_datum(key, datum)
+            if time_in_s > 0: playback_data.append([time_in_s, metadata])
+            
+    playback_data = sorted(playback_data)
+    time0 = playback_data[0][0]
+    for i in range(len(playback_data)):
+        playback_data[i][0] -= time0
+        
+    battery_info = defaultdict(list)
+        
+    for time_in_s, metadata in playback_data[:-100]:
+        dev_id, reported_id, lat, lon, num_sat, spd, bat_perc, time_since_boot, month, day, hour, minute, second = metadata
+        
+        battery_info[(dev_id)].append([bat_perc, time_since_boot, time_in_s])
+        
+    import numpy as np
+    import pylab as pl
+    
+    numFigs = 0
+    for key, data in battery_info.iteritems():
+        if len(data) > 500:
+            numFigs += 1
+    
+    print 'Number of logs:', numFigs
+    
+    #f, axLst = pl.subplots(3, numFigs/3, sharey=True, sharex=True)
+    f, axLst = pl.subplots(1, 1, sharey=True, sharex=True)
+    i = 0
+    for key, data in battery_info.iteritems():
+        if len(data) > 500:
+            data = np.array(data)
+            battVals = data[:,0]
+            time_since_boot = data[:,1]
+            time_in_s = data[:,2]
+            #axLst[i%3,i//3].plot(time_in_s/(60*60.), time_since_boot/(1000*60*60.), '+')
+            #axLst.plot(time_in_s/(60*60.), time_since_boot/(1000*60*60.), '+', label=nameMap[key])
+            axLst.plot(time_since_boot/(1000*60*60.),battVals, '.')#, label=nameMap[key])
+            #axLst[i%3,i//3].set_xlabel(nameMap[key])
+            i += 1
+    #pl.xlabel('Hours since Last Reboot')
+    #pl.ylabel('Battery Indicator')
+    pl.title("Talisman v1.0: Battery %% vs Uptime (Hrs)\nNote: Uptime increases while charging")
+    pl.legend()
+    pl.show()
+
 if __name__ == '__main__':
     print 'usage: "python parse_logs.py outputfilename"'
     
@@ -445,3 +522,5 @@ if __name__ == '__main__':
     gen_playback_log(of_pickle, 'playback2018.txt')
     
     print 'done!'
+    
+    #process_battery_info('full2017.pickle')
