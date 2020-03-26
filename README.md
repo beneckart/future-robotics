@@ -20,3 +20,7 @@ A 3ft by 3ft laser etched map of burning man backlit by 450 LEDs placed at road 
 ## HugBot
 
 A human-sized robot that can electronically sense hugs (both pressure and coverage). Three pressure sensitive panels made from velostat digitally control eight electroluminescent wires. Uses an arduino and an EL wire controller shield (El Escudo Dos).
+
+## Haus of Faus
+
+TBD
